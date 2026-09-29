@@ -1,0 +1,49 @@
+# Тестовое приложение: nginx со статической страницей.
+# Namespace и права для пайплайна создаёт плейбук ansible/33-app.yaml,
+# а сами манифесты применяет CI/CD при сборке тега.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  namespace: web-app
+  labels:
+    app: web-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web-app
+  template:
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      # Секрет с ключом сервисного аккаунта: кластер тянет образ из cr.yandex.
+      # Создаётся в шаге деплоя из того же ключа, что смонтирован в агент.
+      imagePullSecrets:
+        - name: registry-key
+      containers:
+        - name: web-app
+          # Тег обновляет пайплайн: kubectl set image ... =cr.yandex/<registry>/hub:<тег>
+          image: cr.yandex/crpj27virc0v36d3u7rq/hub:latest
+          ports:
+            - name: http
+              containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
