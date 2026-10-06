@@ -1,6 +1,4 @@
 # Тестовое приложение: nginx со статической страницей.
-# Namespace и права для пайплайна создаёт плейбук ansible/33-app.yaml,
-# а сами манифесты применяет CI/CD при сборке тега.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
