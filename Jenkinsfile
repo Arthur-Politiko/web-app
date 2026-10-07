@@ -1,8 +1,7 @@
-// Сборка и деплой тестового приложения.
+// Сборка и деплой приложения.
+// собрать образ из server/
+// и прокатить его в кластер.
 //
-// Job в Jenkins — multibranch: она видит и ветку main, и теги. Разделение
-// сценариев поэтому делается одной строкой — заполнен ли TAG_NAME, — а не
-// двумя сборками и угадыванием версии, как было в TeamCity.
 pipeline {
   agent any
 
@@ -12,13 +11,20 @@ pipeline {
     buildDiscarder(logRotator(numToKeepStr: '20'))
   }
 
-  environment {
-    REGISTRY   = 'cr.yandex/crpj27virc0v36d3u7rq/hub'
-    NAMESPACE  = 'web-app'
-    DEPLOYMENT = 'web-app'
-  }
-
   stages {
+    // Явная проверка окружения: если контейнер не передал переменные,
+    // сборка падает здесь с понятным текстом, а не на середине команды.
+    stage('Check environment') {
+      steps {
+        sh '''
+          : "${REGISTRY:?REGISTRY не задан — его передаёт контейнер Jenkins}"
+          : "${APP_NAMESPACE:?APP_NAMESPACE не задан}"
+          : "${APP_DEPLOYMENT:?APP_DEPLOYMENT не задан}"
+          : "${REGISTRY_KEY_FILE:?REGISTRY_KEY_FILE не задан}"
+        '''
+      }
+    }
+
     stage('Build and push image') {
       steps {
         // Контекст сборки — server/: там лежат Dockerfile, nginx.conf и index.html.
@@ -31,7 +37,8 @@ pipeline {
           fi
           echo "Собираю $REGISTRY:$VERSION"
 
-          cat /keys/key.json | docker login --username json_key --password-stdin cr.yandex
+          cat "$REGISTRY_KEY_FILE" | docker login \
+            --username json_key --password-stdin "${REGISTRY%%/*}"
 
           # Docker 29 собирает OCI-манифест с аттестациями (provenance/sbom),
           # а реестр Yandex Cloud принимает только классический Docker v2 schema 2.
@@ -58,10 +65,10 @@ pipeline {
         sh '''
           set -e
           echo "Прокатываю $REGISTRY:$TAG_NAME"
-          kubectl -n "$NAMESPACE" set image deployment/$DEPLOYMENT \
-            $DEPLOYMENT="$REGISTRY:$TAG_NAME"
-          kubectl -n "$NAMESPACE" rollout status deployment/$DEPLOYMENT --timeout=180s
-          kubectl -n "$NAMESPACE" get deployment $DEPLOYMENT -o wide
+          kubectl -n "$APP_NAMESPACE" set image deployment/$APP_DEPLOYMENT \
+            $APP_DEPLOYMENT="$REGISTRY:$TAG_NAME"
+          kubectl -n "$APP_NAMESPACE" rollout status deployment/$APP_DEPLOYMENT --timeout=180s
+          kubectl -n "$APP_NAMESPACE" get deployment $APP_DEPLOYMENT -o wide
         '''
       }
     }
